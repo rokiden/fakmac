@@ -41,7 +41,7 @@
 #include <net/rtnetlink.h>
 #include <linux/u64_stats_sync.h>
 
-#define DRV_NAME	"dummy"
+#define DRV_NAME	"fakmac"
 
 static int numdummies = 1;
 
@@ -155,7 +155,7 @@ static int __init dummy_init_one(void)
 	struct net_device *dev_dummy;
 	int err;
 
-	dev_dummy = alloc_netdev(0, "dummy%d", NET_NAME_ENUM, dummy_setup);
+	dev_dummy = alloc_netdev(0, DRV_NAME"%d", NET_NAME_ENUM, dummy_setup);
 	if (!dev_dummy)
 		return -ENOMEM;
 
