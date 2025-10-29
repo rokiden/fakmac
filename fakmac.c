@@ -38,12 +38,14 @@
 #include <linux/moduleparam.h>
 #include <linux/net_tstamp.h>
 #include <linux/u64_stats_sync.h>
+#include <linux/platform_device.h>
 #include <net/rtnetlink.h>
 
 #define DRV_NAME	"fakmac"
 
 static int numdummies = 1;
 static struct net_device **dummy_devs;
+static struct platform_device *platform_dev;
 
 /* fake multicast ability */
 static void set_multicast_list(struct net_device *dev)
@@ -126,6 +128,9 @@ static void dummy_setup(struct net_device *dev)
 
 	dev->min_mtu = 0;
 	dev->max_mtu = 0;
+	
+	/* Set parent device to make it appear as physical */
+	SET_NETDEV_DEV(dev, &platform_dev->dev);
 }
 
 
@@ -162,9 +167,16 @@ static int __init dummy_init_module(void)
 	if (numdummies < 1)
 		numdummies = 1;
 
+	/* Create platform device */
+	platform_dev = platform_device_register_simple(DRV_NAME, -1, NULL, 0);
+	if (IS_ERR(platform_dev))
+		return PTR_ERR(platform_dev);
+
 	dummy_devs = kcalloc(numdummies, sizeof(struct net_device *), GFP_KERNEL);
-	if (!dummy_devs)
-		return -ENOMEM;
+	if (!dummy_devs) {
+		err = -ENOMEM;
+		goto err_platform;
+	}
 
 	for (i = 0; i < numdummies && !err; i++) {
 		err = dummy_init_one(i);
@@ -180,10 +192,14 @@ static int __init dummy_init_module(void)
 			}
 		}
 		kfree(dummy_devs);
-		return err;
+		goto err_platform;
 	}
 
 	return 0;
+
+err_platform:
+	platform_device_unregister(platform_dev);
+	return err;
 }
 
 static void __exit dummy_cleanup_module(void)
@@ -196,6 +212,7 @@ static void __exit dummy_cleanup_module(void)
 		}
 	}
 	kfree(dummy_devs);
+	platform_device_unregister(platform_dev);
 }
 
 module_init(dummy_init_module);
