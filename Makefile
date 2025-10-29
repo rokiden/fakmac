@@ -23,7 +23,8 @@ clean:
 	make -C $(KERNEL_BUILD_DIR) M=$(PWD) clean
 
 load:
-	sudo insmod ./$(DRIVER_NAME).ko numdummies=1
+	sudo insmod ./$(DRIVER_NAME).ko
+	sudo ip link set dev $(DRIVER_NAME)0 address de:ad:be:ef:00:01
 
 unload:
 	sudo rmmod $(DRIVER_NAME)
