@@ -36,14 +36,14 @@
 #include <linux/ethtool.h>
 #include <linux/init.h>
 #include <linux/moduleparam.h>
-#include <linux/rtnetlink.h>
 #include <linux/net_tstamp.h>
-#include <net/rtnetlink.h>
 #include <linux/u64_stats_sync.h>
+#include <net/rtnetlink.h>
 
 #define DRV_NAME	"fakmac"
 
 static int numdummies = 1;
+static struct net_device **dummy_devs;
 
 /* fake multicast ability */
 static void set_multicast_list(struct net_device *dev)
@@ -128,29 +128,13 @@ static void dummy_setup(struct net_device *dev)
 	dev->max_mtu = 0;
 }
 
-static int dummy_validate(struct nlattr *tb[], struct nlattr *data[],
-			  struct netlink_ext_ack *extack)
-{
-	if (tb[IFLA_ADDRESS]) {
-		if (nla_len(tb[IFLA_ADDRESS]) != ETH_ALEN)
-			return -EINVAL;
-		if (!is_valid_ether_addr(nla_data(tb[IFLA_ADDRESS])))
-			return -EADDRNOTAVAIL;
-	}
-	return 0;
-}
 
-static struct rtnl_link_ops dummy_link_ops __read_mostly = {
-	.kind		= DRV_NAME,
-	.setup		= dummy_setup,
-	.validate	= dummy_validate,
-};
 
 /* Number of dummy devices to be set up by this module. */
 module_param(numdummies, int, 0);
 MODULE_PARM_DESC(numdummies, "Number of dummy pseudo devices");
 
-static int __init dummy_init_one(void)
+static int __init dummy_init_one(int index)
 {
 	struct net_device *dev_dummy;
 	int err;
@@ -159,10 +143,11 @@ static int __init dummy_init_one(void)
 	if (!dev_dummy)
 		return -ENOMEM;
 
-	dev_dummy->rtnl_link_ops = &dummy_link_ops;
-	err = register_netdevice(dev_dummy);
+	err = register_netdev(dev_dummy);
 	if (err < 0)
 		goto err;
+	
+	dummy_devs[index] = dev_dummy;
 	return 0;
 
 err:
@@ -174,33 +159,46 @@ static int __init dummy_init_module(void)
 {
 	int i, err = 0;
 
-	down_write(&pernet_ops_rwsem);
-	rtnl_lock();
-	err = __rtnl_link_register(&dummy_link_ops);
-	if (err < 0)
-		goto out;
+	if (numdummies < 1)
+		numdummies = 1;
+
+	dummy_devs = kcalloc(numdummies, sizeof(struct net_device *), GFP_KERNEL);
+	if (!dummy_devs)
+		return -ENOMEM;
 
 	for (i = 0; i < numdummies && !err; i++) {
-		err = dummy_init_one();
+		err = dummy_init_one(i);
 		cond_resched();
 	}
-	if (err < 0)
-		__rtnl_link_unregister(&dummy_link_ops);
+	
+	if (err < 0) {
+		/* Cleanup already created devices */
+		for (i = 0; i < numdummies; i++) {
+			if (dummy_devs[i]) {
+				unregister_netdev(dummy_devs[i]);
+				dummy_devs[i] = NULL;
+			}
+		}
+		kfree(dummy_devs);
+		return err;
+	}
 
-out:
-	rtnl_unlock();
-	up_write(&pernet_ops_rwsem);
-
-	return err;
+	return 0;
 }
 
 static void __exit dummy_cleanup_module(void)
 {
-	rtnl_link_unregister(&dummy_link_ops);
+	int i;
+
+	for (i = 0; i < numdummies; i++) {
+		if (dummy_devs[i]) {
+			unregister_netdev(dummy_devs[i]);
+		}
+	}
+	kfree(dummy_devs);
 }
 
 module_init(dummy_init_module);
 module_exit(dummy_cleanup_module);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Dummy netdevice driver which discards all packets sent to it");
-MODULE_ALIAS_RTNL_LINK(DRV_NAME);
