@@ -3,24 +3,32 @@
 # Driver name variable
 DRIVER_NAME := fakmac
 
-# Set source files
-obj-m := $(DRIVER_NAME).o
-
 # Get the path to the kernel build system
 # KERNEL_BUILD_DIR should point to the directory containing the kernel source or headers' Makefile
 # /lib/modules/$(shell uname -r)/build is the standard location for the currently running kernel's build system
 KERNEL_BUILD_DIR := /lib/modules/$(shell uname -r)/build
 
-SOURCES := $(DRIVER_NAME).c Makefile
+SOURCES := $(wildcard src/*)
 BUILD_DIR := $(CURDIR)/build
 KO_PATH := $(BUILD_DIR)/$(DRIVER_NAME).ko
 
 # Build the module
 $(KO_PATH): $(SOURCES)
-	rm -rf $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)
-	cp $(SOURCES) $(BUILD_DIR)
-	make -C $(KERNEL_BUILD_DIR) M=$(BUILD_DIR) modules
+	@if [ "$$(id -u)" -eq 0 ]; then \
+		owner=$$(stat -c '%U' .); \
+		if [ "$$owner" = "root" ]; then \
+			echo "Error: Do not build as root"; \
+			exit 1; \
+		else \
+			echo "Running build as $$owner"; \
+			su -c "$(MAKE) $@" $$owner; \
+		fi \
+	else \
+		rm -rf $(BUILD_DIR); \
+		mkdir -p $(BUILD_DIR); \
+		cp $(SOURCES) $(BUILD_DIR); \
+		make -C $(KERNEL_BUILD_DIR) M=$(BUILD_DIR) modules; \
+	fi
 
 # Alias
 build: $(KO_PATH)
