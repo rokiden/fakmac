@@ -1,0 +1,18 @@
+[Unit]
+Description=Fakmac Kernel Module Service
+After=network.target
+
+[Service]
+User=root
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/user/fakmac
+ExecStart=/usr/bin/make load_env
+ExecStop=/usr/bin/make unload
+
+Environment="FM_NUM=2"
+Environment="FM_0=de:ad:be:ef:00:01"
+Environment="FM_1=de:ad:be:ef:00:02"
+
+[Install]
+WantedBy=multi-user.target

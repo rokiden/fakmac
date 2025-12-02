@@ -11,21 +11,50 @@ obj-m := $(DRIVER_NAME).o
 # /lib/modules/$(shell uname -r)/build is the standard location for the currently running kernel's build system
 KERNEL_BUILD_DIR := /lib/modules/$(shell uname -r)/build
 
-# Default target: build the module
-all:
-	make -C $(KERNEL_BUILD_DIR) M=$(PWD) modules
+SOURCES := $(DRIVER_NAME).c Makefile
+BUILD_DIR := $(CURDIR)/build
+KO_PATH := $(BUILD_DIR)/$(DRIVER_NAME).ko
+
+# Build the module
+$(KO_PATH): $(SOURCES)
+	rm -rf $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)
+	cp $(SOURCES) $(BUILD_DIR)
+	make -C $(KERNEL_BUILD_DIR) M=$(BUILD_DIR) modules
+
+# Alias
+build: $(KO_PATH)
+
+# Check if module is compiled for current kernel, compile if not
+update:
+	@if modinfo $(KO_PATH) 2>/dev/null | grep -q "$(shell uname -r)"; then \
+		echo "Module $(DRIVER_NAME) is already compiled for kernel $(shell uname -r)."; \
+	else \
+		echo "Module $(DRIVER_NAME) is not compiled for kernel $(shell uname -r)."; \
+		$(MAKE) build; \
+	fi
 
 # Clean target: remove generated files
 clean:
-	make -C $(KERNEL_BUILD_DIR) M=$(PWD) clean
+	rm -rf $(BUILD_DIR)
 
-# Load module with default parameters, set MAC address, and show details
-load:
-	sudo insmod ./$(DRIVER_NAME).ko
-	sudo ip link set dev $(DRIVER_NAME)0 address de:ad:be:ef:00:01
-	ip -d link show $(DRIVER_NAME)0
-	ls /sys/devices/virtual/net/
+# Load module with environment variables, set MAC addresses, and show details
+load_env: unload update
+	sudo insmod $(KO_PATH) numdummies=${FM_NUM}
+	for i in $$(seq 0 $$(($${FM_NUM}-1))); do \
+		eval mac=\$$FM_$$i; \
+		if [ -z "$$mac" ]; then \
+			echo "Error: Environment variable FM_$$i is not set"; \
+			sudo rmmod $(DRIVER_NAME); \
+			exit 1; \
+		fi; \
+		sudo ip link set dev $(DRIVER_NAME)$$i address $$mac; \
+		ip -d link show $(DRIVER_NAME)$$i; \
+	done
 
 # Unload the module
 unload:
-	sudo rmmod $(DRIVER_NAME)
+	sudo rmmod $(DRIVER_NAME) || true
+
+.DEFAULT_GOAL := build
+.PHONY: build clean load_test load_env unload update
