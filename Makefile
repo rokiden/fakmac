@@ -39,7 +39,7 @@ update:
 		echo "Module $(DRIVER_NAME) is already compiled for kernel $(shell uname -r)."; \
 	else \
 		echo "Module $(DRIVER_NAME) is not compiled for kernel $(shell uname -r)."; \
-		$(MAKE) build; \
+		$(MAKE) clean build; \
 	fi
 
 # Clean target: remove generated files
