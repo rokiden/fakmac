@@ -1,7 +1,9 @@
-import os
-import podman
-import subprocess
 import logging
+import os
+import re
+import subprocess
+
+import podman
 
 # Configure logging
 logging.basicConfig(
@@ -9,8 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-IMAGE = os.environ["FMA_IMAGE"]
-NETIF = os.environ["FMA_NETIF"]
+LABEL_NAME = "fakmac.attacher.netif"
 
 
 def main():
@@ -26,28 +27,45 @@ def main():
         logger.exception("Error connecting to Podman socket")
         return
 
-    logger.info(f"Waiting for a new container with the image: {IMAGE}")
+    logger.info(f"Waiting for a new container with the label: {LABEL_NAME}")
 
     for event in client.events(decode=True):
         if event["Type"] == "container" and event["Action"] == "start":
             container_id = event["Actor"]["ID"]
             attributes = event["Actor"]["Attributes"]
-            if attributes.get("image", "").startswith(IMAGE + ":"):
+
+            if LABEL_NAME in attributes:
+                netif_regexp = attributes[LABEL_NAME]
                 try:
                     container = client.containers.get(container_id)
                     pid = container.inspect().get("State", {}).get("Pid")
-                    logger.info(f"Found target container {container.name} with PID: {pid}")
+                    logger.info(
+                        f"Found target container {container.name} with PID: {pid}"
+                    )
 
-                    command = f"ip link set {NETIF} netns {pid}"
-                    logger.info(f"Running command: {command}")
-                    try:
-                        subprocess.run(command, check=True, shell=True)
-                        logger.info("Command executed successfully.")
-                    except subprocess.CalledProcessError:
-                        logger.exception("Command failed")
-                    except FileNotFoundError:
-                        logger.exception(f"Command not found: {command[0]}")
+                    netif = None
+                    for interface in os.listdir("/sys/class/net"):
+                        if re.match(netif_regexp, interface):
+                            netif = interface
+                            break
 
+                    if netif is not None:
+                        logger.info(
+                            f"Attaching network interface '{netif}' to container '{container.name}'"
+                        )
+                        command = f"ip link set {netif} netns {pid}"
+                        logger.info(f"Running command: {command}")
+                        try:
+                            subprocess.run(command, check=True, shell=True)
+                            logger.info("Command executed successfully.")
+                        except subprocess.CalledProcessError:
+                            logger.exception("Command failed")
+                        except FileNotFoundError:
+                            logger.exception(f"Command not found: {command[0]}")
+                    else:
+                        logger.warning(
+                            f"No network interface matching '{netif_regexp}' found."
+                        )
                 except podman.errors.NotFound:
                     logger.warning(
                         f"Could not find container {container_id[:12]}. It may have been removed."

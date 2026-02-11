@@ -10,8 +10,5 @@ ExecStart=/usr/bin/python3 /home/user/fakmac/fakmac_attacher.py
 Restart=always
 RestartSec=5
 
-Environment="FMA_IMAGE=docker.io/library/alpine"
-Environment="FMA_NETIF=fakmac1"
-
 [Install]
 WantedBy=multi-user.target
