@@ -48,6 +48,7 @@ clean:
 
 # Load module with environment variables, set MAC addresses, and show details
 load_env: unload update
+	sudo restorecon $(KO_PATH)
 	sudo insmod $(KO_PATH) numdummies=${FM_NUM}
 	for i in $$(seq 0 $$(($${FM_NUM}-1))); do \
 		eval mac=\$$FM_$$i; \
@@ -64,5 +65,11 @@ load_env: unload update
 unload:
 	sudo rmmod $(DRIVER_NAME) || true
 
+KO_PATH_REGEX := $(subst .,\.,$(KO_PATH))
+se_add:
+	sudo semanage fcontext -a -t modules_object_t "$(KO_PATH_REGEX)"
+se_del:
+	sudo semanage fcontext -d "$(KO_PATH_REGEX)"
+
 .DEFAULT_GOAL := build
-.PHONY: build clean load_test load_env unload update
+.PHONY: build clean load_test load_env unload update se_add se_del
